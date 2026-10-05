@@ -65,7 +65,7 @@ public class SecurityConfig {
 						// --------------------------------------
 						// Authentication
 						// --------------------------------------
-						.requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
 
 						// --------------------------------------
 						// Admin

@@ -10,10 +10,12 @@ import com.tutorial.dto.request.LoginRequest;
 import com.tutorial.dto.request.RegisterRequest;
 import com.tutorial.dto.response.LoginResponse;
 import com.tutorial.dto.response.UserResponse;
+import com.tutorial.entity.RefreshToken;
 import com.tutorial.entity.User;
 import com.tutorial.repository.UserRepository;
 import com.tutorial.security.CustomUserDetails;
 import com.tutorial.security.jwt.JwtService;
+import com.tutorial.security.jwt.RefreshTokenService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,7 +26,7 @@ public class AuthService {
 	private final UserRepository userRepository;
 
 	private final PasswordEncoder passwordEncoder;
-
+	private final RefreshTokenService refreshTokenService;
 	private final AuthenticationManager authenticationManager;
 
 	private final JwtService jwtService;
@@ -56,10 +58,12 @@ public class AuthService {
 
 		CustomUserDetails userDetails = new CustomUserDetails(user);
 
-		String token = jwtService.generateToken(userDetails);
+		String accessToken = jwtService.generateToken(userDetails);
 
-		return LoginResponse.builder().token(token).tokenType("Bearer").expiresIn(jwtService.getExpiration())
-				.user(mapToResponse(user)).build();
+		RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+
+		return LoginResponse.builder().accessToken(accessToken).refreshToken(refreshToken.getToken())
+				.tokenType("Bearer").expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
 	}
 
 	private UserResponse mapToResponse(User user) {
