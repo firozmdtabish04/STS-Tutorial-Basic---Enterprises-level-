@@ -1,5 +1,7 @@
 package com.tutorial.entity;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -52,6 +54,11 @@ public class User {
 	@Column(nullable = false)
 	@Builder.Default
 	private boolean locked = false;
+	@Column(name = "failed_login_attempts", nullable = false)
+	@Builder.Default
+	private int failedLoginAttempts = 0;
+	@Column(name = "locked_at")
+	private LocalDateTime lockedAt;
 
 	public enum Role {
 		USER, ADMIN

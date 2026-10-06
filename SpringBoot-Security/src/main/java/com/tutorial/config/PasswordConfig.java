@@ -10,6 +10,17 @@ public class PasswordConfig {
 
 	@Bean
 	public PasswordEncoder passwordEncoder() {
-		return new BCryptPasswordEncoder();
+
+		/*
+		 * BCrypt strength = 12
+		 *
+		 * Higher value: More computationally expensive Better resistance against
+		 * brute-force attacks
+		 *
+		 * 12 is a reasonable starting point.
+		 *
+		 * Benchmark on your production infrastructure before choosing the final cost.
+		 */
+		return new BCryptPasswordEncoder(12);
 	}
 }

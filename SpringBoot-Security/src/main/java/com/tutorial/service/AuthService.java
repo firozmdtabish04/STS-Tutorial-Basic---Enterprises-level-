@@ -2,20 +2,21 @@ package com.tutorial.service;
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tutorial.dto.request.LoginRequest;
+import com.tutorial.dto.request.RefreshTokenRequest;
 import com.tutorial.dto.request.RegisterRequest;
 import com.tutorial.dto.response.LoginResponse;
 import com.tutorial.dto.response.UserResponse;
-import com.tutorial.entity.RefreshToken;
 import com.tutorial.entity.User;
 import com.tutorial.repository.UserRepository;
 import com.tutorial.security.CustomUserDetails;
 import com.tutorial.security.jwt.JwtService;
-import com.tutorial.security.jwt.RefreshTokenService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,47 +25,124 @@ import lombok.RequiredArgsConstructor;
 public class AuthService {
 
 	private final UserRepository userRepository;
-
 	private final PasswordEncoder passwordEncoder;
 	private final RefreshTokenService refreshTokenService;
 	private final AuthenticationManager authenticationManager;
-
 	private final JwtService jwtService;
+
+	// =========================================================
+	// REGISTER
+	// =========================================================
 
 	@Transactional
 	public UserResponse register(RegisterRequest request) {
 
-		if (userRepository.existsByEmail(request.getEmail())) {
+		String email = normalizeEmail(request.getEmail());
 
+		if (userRepository.existsByEmail(email)) {
 			throw new IllegalArgumentException("Email already registered");
 		}
 
-		User user = User.builder().firstName(request.getFirstName()).lastName(request.getLastName())
-				.email(request.getEmail().toLowerCase().trim()).password(passwordEncoder.encode(request.getPassword()))
-				.role(User.Role.USER).enabled(true).locked(false).build();
+		User user = User.builder().firstName(request.getFirstName().trim()).lastName(request.getLastName().trim())
+				.email(email).password(passwordEncoder.encode(request.getPassword())).role(User.Role.USER).enabled(true)
+				.locked(false).failedLoginAttempts(0).build();
 
 		User savedUser = userRepository.save(user);
 
 		return mapToResponse(savedUser);
 	}
 
+	// =========================================================
+	// LOGIN
+	// =========================================================
+
+	@Transactional
 	public LoginResponse login(LoginRequest request) {
 
-		authenticationManager
-				.authenticate(new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
+		String email = normalizeEmail(request.getEmail());
 
-		User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
-				.orElseThrow(() -> new RuntimeException("User not found"));
+		Authentication authentication;
 
-		CustomUserDetails userDetails = new CustomUserDetails(user);
+		try {
+
+			authentication = authenticationManager
+					.authenticate(new UsernamePasswordAuthenticationToken(email, request.getPassword()));
+
+		} catch (AuthenticationException ex) {
+
+			throw new IllegalArgumentException("Invalid email or password");
+		}
+
+		CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+
+		User user = userDetails.getUser();
 
 		String accessToken = jwtService.generateToken(userDetails);
 
-		RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+		RefreshTokenService.CreationResult result = refreshTokenService.createRefreshToken(user);
 
-		return LoginResponse.builder().accessToken(accessToken).refreshToken(refreshToken.getToken())
+		return LoginResponse.builder().accessToken(accessToken).refreshToken(result.rawToken()).tokenType("Bearer")
+				.expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
+	}
+
+	// =========================================================
+	// REFRESH TOKEN
+	// =========================================================
+
+	@Transactional
+	public LoginResponse refresh(RefreshTokenRequest request) {
+
+		RefreshTokenService.RotationResult result = refreshTokenService.rotate(request.getRefreshToken());
+
+		User user = result.user();
+
+		CustomUserDetails userDetails = new CustomUserDetails(user);
+
+		String newAccessToken = jwtService.generateToken(userDetails);
+
+		return LoginResponse.builder().accessToken(newAccessToken).refreshToken(result.refreshToken())
 				.tokenType("Bearer").expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
 	}
+
+	// =========================================================
+	// LOGOUT
+	// =========================================================
+
+	@Transactional
+	public void logout(RefreshTokenRequest request) {
+
+		refreshTokenService.revokeToken(request.getRefreshToken());
+	}
+
+	// =========================================================
+	// LOGOUT ALL DEVICES
+	// =========================================================
+
+	@Transactional
+	public void logoutAll(Long userId) {
+
+		User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+		refreshTokenService.revokeAllUserTokens(user);
+	}
+
+	// =========================================================
+	// NORMALIZE EMAIL
+	// =========================================================
+
+	private String normalizeEmail(String email) {
+
+		if (email == null || email.isBlank()) {
+
+			throw new IllegalArgumentException("Email is required");
+		}
+
+		return email.trim().toLowerCase();
+	}
+
+	// =========================================================
+	// USER RESPONSE
+	// =========================================================
 
 	private UserResponse mapToResponse(User user) {
 
