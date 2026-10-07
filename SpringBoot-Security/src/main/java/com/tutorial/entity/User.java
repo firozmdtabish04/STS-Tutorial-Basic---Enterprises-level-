@@ -26,38 +26,18 @@ import lombok.Setter;
 @Builder
 public class User {
 
-	// =========================================================
-	// ID
-	// =========================================================
-
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	// =========================================================
-	// EMAIL
-	// =========================================================
-
-	@Column(nullable = false, unique = true)
+	@Column(nullable = false)
 	private String email;
-
-	// =========================================================
-	// PASSWORD
-	// =========================================================
 
 	@Column(nullable = false)
 	private String password;
 
-	// =========================================================
-	// FIRST NAME
-	// =========================================================
-
 	@Column(nullable = false)
 	private String firstName;
-
-	// =========================================================
-	// LAST NAME
-	// =========================================================
 
 	@Column(nullable = false)
 	private String lastName;
@@ -72,38 +52,30 @@ public class User {
 	private Role role = Role.USER;
 
 	// =========================================================
-	// ENABLED
+	// ACCOUNT STATUS
 	// =========================================================
 
 	@Column(nullable = false)
 	@Builder.Default
 	private boolean enabled = true;
 
-	// =========================================================
-	// ACCOUNT LOCK
-	// =========================================================
-
 	@Column(nullable = false)
 	@Builder.Default
 	private boolean locked = false;
 
 	// =========================================================
-	// FAILED LOGIN ATTEMPTS
+	// FAILED LOGIN
 	// =========================================================
 
 	@Column(name = "failed_login_attempts", nullable = false)
 	@Builder.Default
 	private int failedLoginAttempts = 0;
 
-	// =========================================================
-	// LOCKED AT
-	// =========================================================
-
 	@Column(name = "locked_at")
 	private LocalDateTime lockedAt;
 
 	// =========================================================
-	// ACCOUNT METHODS
+	// FAILED LOGIN METHODS
 	// =========================================================
 
 	public void incrementFailedLoginAttempts() {
@@ -114,10 +86,18 @@ public class User {
 		this.failedLoginAttempts = 0;
 	}
 
+	// =========================================================
+	// ACCOUNT LOCK
+	// =========================================================
+
 	public void lockAccount() {
 		this.locked = true;
 		this.lockedAt = LocalDateTime.now();
 	}
+
+	// =========================================================
+	// ACCOUNT UNLOCK
+	// =========================================================
 
 	public void unlockAccount() {
 		this.locked = false;

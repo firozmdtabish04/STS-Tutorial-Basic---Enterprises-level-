@@ -28,12 +28,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		String path = request.getRequestURI();
 		String method = request.getMethod();
 
-		// =====================================================
-		// ONLY POST REQUESTS
-		// =====================================================
-
 		if (!"POST".equalsIgnoreCase(method)) {
-
 			filterChain.doFilter(request, response);
 			return;
 		}
@@ -41,47 +36,32 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		String clientIp = getClientIp(request);
 
 		ConsumptionProbe probe = null;
-
-		// =====================================================
-		// LOGIN
-		// =====================================================
+		long rateLimit = 0;
 
 		if ("/api/auth/login".equals(path)) {
 
+			rateLimit = 5;
 			probe = rateLimitService.tryLogin(clientIp);
-		}
 
-		// =====================================================
-		// REGISTER
-		// =====================================================
+		} else if ("/api/auth/register".equals(path)) {
 
-		else if ("/api/auth/register".equals(path)) {
-
+			rateLimit = 3;
 			probe = rateLimitService.tryRegister(clientIp);
-		}
 
-		// =====================================================
-		// REFRESH
-		// =====================================================
+		} else if ("/api/auth/refresh".equals(path)) {
 
-		else if ("/api/auth/refresh".equals(path)) {
-
+			rateLimit = 10;
 			probe = rateLimitService.tryRefresh(clientIp);
 		}
 
-		// =====================================================
-		// ENDPOINT NOT RATE LIMITED
-		// =====================================================
-
 		if (probe == null) {
-
 			filterChain.doFilter(request, response);
 			return;
 		}
 
-		// =====================================================
-		// RATE LIMIT EXCEEDED
-		// =====================================================
+		response.setHeader("X-RateLimit-Limit", String.valueOf(rateLimit));
+
+		response.setHeader("X-RateLimit-Remaining", String.valueOf(probe.getRemainingTokens()));
 
 		if (!probe.isConsumed()) {
 
@@ -98,23 +78,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
 					    "status": 429,
 					    "error": "Too Many Requests",
 					    "message": "Rate limit exceeded. Please try again later.",
-					    "retryAfter": %d "min"
+					    "retryAfter": %d
 					}
 					""".formatted(retryAfterSeconds));
 
 			return;
 		}
 
-		// =====================================================
-		// REQUEST ALLOWED
-		// =====================================================
-
 		filterChain.doFilter(request, response);
 	}
-
-	// =========================================================
-	// CLIENT IP
-	// =========================================================
 
 	private String getClientIp(HttpServletRequest request) {
 

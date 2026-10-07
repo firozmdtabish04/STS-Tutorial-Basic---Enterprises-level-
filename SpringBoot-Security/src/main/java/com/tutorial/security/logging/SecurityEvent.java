@@ -1,0 +1,16 @@
+package com.tutorial.security.logging;
+
+public enum SecurityEvent {
+
+	LOGIN_SUCCESS, LOGIN_FAILED,
+
+	ACCOUNT_LOCKED, ACCOUNT_UNLOCKED,
+
+	TOKEN_REFRESH, REFRESH_TOKEN_REUSE,
+
+	LOGOUT, LOGOUT_ALL,
+
+	ACCESS_DENIED,
+
+	ADMIN_ACTION
+}

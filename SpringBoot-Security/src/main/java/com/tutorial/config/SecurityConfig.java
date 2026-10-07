@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -36,6 +37,7 @@ public class SecurityConfig {
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
 	private final JwtAccessDeniedHandler accessDeniedHandler;
+
 	private final RateLimitFilter rateLimitFilter;
 
 	// =========================================================
@@ -81,10 +83,7 @@ public class SecurityConfig {
 				// EXCEPTION HANDLING
 				// =================================================
 
-				.exceptionHandling(exception -> exception
-
-						.authenticationEntryPoint(authenticationEntryPoint)
-
+				.exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint)
 						.accessDeniedHandler(accessDeniedHandler))
 
 				// =================================================
@@ -93,20 +92,21 @@ public class SecurityConfig {
 
 				.headers(headers -> headers
 
-						// Prevent MIME-type sniffing
+						// Prevent MIME sniffing
 						.contentTypeOptions(contentTypeOptions -> {
 						})
 
 						// Prevent clickjacking
 						.frameOptions(frame -> frame.sameOrigin())
 
-						// Control Referer information
+						// Referrer Policy
 						.referrerPolicy(referrer -> referrer
 								.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
 
 						// Permissions Policy
 						.permissionsPolicy(
 								permissions -> permissions.policy("camera=(), microphone=(), geolocation=()")))
+
 				// =================================================
 				// AUTHORIZATION
 				// =================================================
@@ -116,14 +116,14 @@ public class SecurityConfig {
 						// Swagger
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
 
-						// Authentication
+						// Local Authentication
 						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
 
 						// Public APIs
 						.requestMatchers("/api/public/**").permitAll()
 
 						// CORS preflight
-						.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
 						// ADMIN
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -135,19 +135,17 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 
 				// =================================================
-				// JWT FILTER
-				// =================================================
-				// =========================================================
 				// RATE LIMIT FILTER
-				// =========================================================
+				// =================================================
 
 				.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
 
-				// =========================================================
+				// =================================================
 				// JWT FILTER
-				// =========================================================
+				// =================================================
 
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
 		return http.build();
 	}
 
@@ -193,12 +191,13 @@ public class SecurityConfig {
 		// =====================================================
 
 		/*
-		 * JWT is sent through:
+		 * JWT is sent using:
 		 *
-		 * Authorization: Bearer <token>
+		 * Authorization: Bearer <access-token>
 		 *
 		 * Therefore browser credentials are not required.
 		 */
+
 		configuration.setAllowCredentials(false);
 
 		// =====================================================

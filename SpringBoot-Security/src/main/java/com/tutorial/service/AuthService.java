@@ -18,6 +18,8 @@ import com.tutorial.entity.User;
 import com.tutorial.repository.UserRepository;
 import com.tutorial.security.CustomUserDetails;
 import com.tutorial.security.jwt.JwtService;
+import com.tutorial.security.logging.SecurityEvent;
+import com.tutorial.security.logging.SecurityEventLogger;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,6 +32,7 @@ public class AuthService {
 	private final RefreshTokenService refreshTokenService;
 	private final AuthenticationManager authenticationManager;
 	private final JwtService jwtService;
+	private final SecurityEventLogger securityEventLogger;
 
 	@Value("${app.security.max-failed-attempts}")
 	private int maxFailedAttempts;
@@ -66,14 +69,14 @@ public class AuthService {
 		String email = normalizeEmail(request.getEmail());
 
 		// -----------------------------------------------------
-		// 1. Find user
+		// 1. FIND USER
 		// -----------------------------------------------------
 
 		User user = userRepository.findByEmail(email)
 				.orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
 
 		// -----------------------------------------------------
-		// 2. Check account status
+		// 2. CHECK ACCOUNT STATUS
 		// -----------------------------------------------------
 
 		if (!user.isEnabled()) {
@@ -87,7 +90,7 @@ public class AuthService {
 		}
 
 		// -----------------------------------------------------
-		// 3. Authenticate username + password
+		// 3. AUTHENTICATE USER
 		// -----------------------------------------------------
 
 		Authentication authentication;
@@ -100,27 +103,48 @@ public class AuthService {
 		} catch (AuthenticationException ex) {
 
 			// -------------------------------------------------
-			// WRONG PASSWORD
+			// WRONG CREDENTIALS
 			// -------------------------------------------------
 
 			user.incrementFailedLoginAttempts();
 
+			boolean accountLocked = false;
+
 			// -------------------------------------------------
-			// CHECK MAX ATTEMPTS
+			// CHECK MAX FAILED ATTEMPTS
 			// -------------------------------------------------
 
 			if (user.getFailedLoginAttempts() >= maxFailedAttempts) {
 
 				user.lockAccount();
+
+				accountLocked = true;
 			}
 
 			userRepository.save(user);
+
+			// -------------------------------------------------
+			// SECURITY EVENT: LOGIN FAILED
+			// -------------------------------------------------
+
+			securityEventLogger.log(SecurityEvent.LOGIN_FAILED, user.getId(), user.getEmail(),
+					"Invalid credentials. Failed attempts=" + user.getFailedLoginAttempts());
+
+			// -------------------------------------------------
+			// SECURITY EVENT: ACCOUNT LOCKED
+			// -------------------------------------------------
+
+			if (accountLocked) {
+
+				securityEventLogger.log(SecurityEvent.ACCOUNT_LOCKED, user.getId(), user.getEmail(),
+						"Maximum failed login attempts exceeded");
+			}
 
 			throw new IllegalArgumentException("Invalid email or password");
 		}
 
 		// -----------------------------------------------------
-		// 4. SUCCESSFUL LOGIN
+		// 4. SUCCESSFUL AUTHENTICATION
 		// -----------------------------------------------------
 
 		CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -128,7 +152,7 @@ public class AuthService {
 		user = userDetails.getUser();
 
 		// -----------------------------------------------------
-		// Reset failed attempts
+		// 5. RESET FAILED LOGIN ATTEMPTS
 		// -----------------------------------------------------
 
 		if (user.getFailedLoginAttempts() > 0) {
@@ -139,19 +163,26 @@ public class AuthService {
 		}
 
 		// -----------------------------------------------------
-		// 5. Generate access token
+		// 6. GENERATE ACCESS TOKEN
 		// -----------------------------------------------------
 
 		String accessToken = jwtService.generateToken(userDetails);
 
 		// -----------------------------------------------------
-		// 6. Create refresh token
+		// 7. CREATE REFRESH TOKEN
 		// -----------------------------------------------------
 
 		RefreshTokenService.CreationResult result = refreshTokenService.createRefreshToken(user);
 
 		// -----------------------------------------------------
-		// 7. Return response
+		// 8. SECURITY EVENT: LOGIN SUCCESS
+		// -----------------------------------------------------
+
+		securityEventLogger.log(SecurityEvent.LOGIN_SUCCESS, user.getId(), user.getEmail(),
+				"User logged in successfully");
+
+		// -----------------------------------------------------
+		// 9. RETURN RESPONSE
 		// -----------------------------------------------------
 
 		return LoginResponse.builder().accessToken(accessToken).refreshToken(result.rawToken()).tokenType("Bearer")
@@ -162,6 +193,7 @@ public class AuthService {
 	// REFRESH TOKEN
 	// =========================================================
 
+	@Transactional
 	public LoginResponse refresh(RefreshTokenRequest request) {
 
 		if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
@@ -169,13 +201,36 @@ public class AuthService {
 			throw new IllegalArgumentException("Refresh token is required");
 		}
 
+		// -----------------------------------------------------
+		// ROTATE REFRESH TOKEN
+		// -----------------------------------------------------
+
 		RefreshTokenService.RotationResult result = refreshTokenService.rotate(request.getRefreshToken());
 
 		User user = result.user();
 
+		// -----------------------------------------------------
+		// SECURITY EVENT: TOKEN REFRESH
+		// -----------------------------------------------------
+
+		securityEventLogger.log(SecurityEvent.TOKEN_REFRESH, user.getId(), user.getEmail(),
+				"Access token and refresh token rotated successfully");
+
+		// -----------------------------------------------------
+		// CREATE NEW USER DETAILS
+		// -----------------------------------------------------
+
 		CustomUserDetails userDetails = new CustomUserDetails(user);
 
+		// -----------------------------------------------------
+		// GENERATE NEW ACCESS TOKEN
+		// -----------------------------------------------------
+
 		String newAccessToken = jwtService.generateToken(userDetails);
+
+		// -----------------------------------------------------
+		// RETURN RESPONSE
+		// -----------------------------------------------------
 
 		return LoginResponse.builder().accessToken(newAccessToken).refreshToken(result.refreshToken())
 				.tokenType("Bearer").expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
@@ -188,9 +243,17 @@ public class AuthService {
 	@Transactional
 	public void logout(RefreshTokenRequest request) {
 
-		if (request == null) {
+		if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+
 			return;
 		}
+
+		/*
+		 * Revoke refresh token.
+		 *
+		 * We are not logging the refresh token itself. The refresh token must NEVER
+		 * appear in application logs.
+		 */
 
 		refreshTokenService.revokeToken(request.getRefreshToken());
 	}
@@ -198,14 +261,6 @@ public class AuthService {
 	// =========================================================
 	// LOGOUT ALL DEVICES
 	// =========================================================
-
-	@Transactional
-	public void logoutAll(Long userId) {
-
-		User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-		refreshTokenService.revokeAllUserTokens(user);
-	}
 
 	// =========================================================
 	// NORMALIZE EMAIL

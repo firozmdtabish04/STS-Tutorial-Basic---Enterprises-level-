@@ -26,19 +26,11 @@ public class AuthController {
 
 	private final AuthService authService;
 
-	// =========================================================
-	// REGISTER
-	// =========================================================
-
 	@PostMapping("/register")
 	public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
 
 		return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
 	}
-
-	// =========================================================
-	// LOGIN
-	// =========================================================
 
 	@PostMapping("/login")
 	public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
@@ -46,22 +38,14 @@ public class AuthController {
 		return ResponseEntity.ok(authService.login(request));
 	}
 
-	// =========================================================
-	// REFRESH
-	// =========================================================
-
 	@PostMapping("/refresh")
 	public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
 
 		return ResponseEntity.ok(authService.refresh(request));
 	}
 
-	// =========================================================
-	// LOGOUT
-	// =========================================================
-
 	@PostMapping("/logout")
-	public ResponseEntity<Void> logout(@RequestBody RefreshTokenRequest request) {
+	public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
 
 		authService.logout(request);
 
