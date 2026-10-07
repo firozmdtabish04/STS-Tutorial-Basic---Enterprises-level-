@@ -2,6 +2,7 @@ package com.tutorial.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Validated
 public class AuthController {
 
 	private final AuthService authService;
@@ -31,9 +33,7 @@ public class AuthController {
 	@PostMapping("/register")
 	public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
 
-		UserResponse response = authService.register(request);
-
-		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+		return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
 	}
 
 	// =========================================================
@@ -43,21 +43,17 @@ public class AuthController {
 	@PostMapping("/login")
 	public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
 
-		LoginResponse response = authService.login(request);
-
-		return ResponseEntity.ok(response);
+		return ResponseEntity.ok(authService.login(request));
 	}
 
 	// =========================================================
-	// REFRESH TOKEN
+	// REFRESH
 	// =========================================================
 
 	@PostMapping("/refresh")
 	public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
 
-		LoginResponse response = authService.refresh(request);
-
-		return ResponseEntity.ok(response);
+		return ResponseEntity.ok(authService.refresh(request));
 	}
 
 	// =========================================================
@@ -65,7 +61,7 @@ public class AuthController {
 	// =========================================================
 
 	@PostMapping("/logout")
-	public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+	public ResponseEntity<Void> logout(@RequestBody RefreshTokenRequest request) {
 
 		authService.logout(request);
 

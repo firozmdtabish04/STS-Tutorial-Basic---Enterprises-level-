@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.tutorial.entity.RefreshToken;
 import com.tutorial.entity.User;
+import com.tutorial.enums.RevocationReason;
 import com.tutorial.repository.RefreshTokenRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,9 @@ public class RefreshTokenService {
 
 	private final RefreshTokenRepository refreshTokenRepository;
 
+	/*
+	 * 64 bytes = 512 bits of random data.
+	 */
 	private static final int TOKEN_BYTES = 64;
 
 	private final SecureRandom secureRandom = new SecureRandom();
@@ -42,13 +46,15 @@ public class RefreshTokenService {
 
 		LocalDateTime now = LocalDateTime.now();
 
-		// Generate secure random raw token
+		// Generate secure raw token
 		String rawToken = generateSecureToken();
 
-		// Never store raw token in database
+		// Hash raw token
 		String tokenHash = hashToken(rawToken);
 
-		// Every login/session gets its own family
+		/*
+		 * Every login/session gets its own family.
+		 */
 		String familyId = UUID.randomUUID().toString();
 
 		RefreshToken refreshToken = RefreshToken.builder().tokenHash(tokenHash).familyId(familyId).user(user)
@@ -59,9 +65,9 @@ public class RefreshTokenService {
 		/*
 		 * IMPORTANT:
 		 *
-		 * rawToken -> returned to client tokenHash -> stored in database
+		 * rawToken -> client tokenHash -> database
 		 *
-		 * We NEVER store rawToken.
+		 * Never store rawToken.
 		 */
 
 		return new CreationResult(rawToken);
@@ -81,13 +87,27 @@ public class RefreshTokenService {
 		RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(tokenHash)
 				.orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
 
-		// Reuse detection
+		// -----------------------------------------------------
+		// REVOKED
+		// -----------------------------------------------------
+
 		if (refreshToken.isRevoked()) {
 
-			throw new RefreshTokenReuseException("Refresh token reuse detected");
+			/*
+			 * If replacedByHash exists, this token was already rotated.
+			 */
+			if (refreshToken.getReplacedByHash() != null) {
+
+				throw new RefreshTokenReuseException("Refresh token reuse detected. Please login again.");
+			}
+
+			throw new IllegalArgumentException("Refresh token has been revoked");
 		}
 
-		// Expiration
+		// -----------------------------------------------------
+		// EXPIRED
+		// -----------------------------------------------------
+
 		if (refreshToken.isExpired()) {
 
 			throw new IllegalArgumentException("Refresh token expired");
@@ -105,14 +125,13 @@ public class RefreshTokenService {
 
 		validateRawToken(rawToken);
 
-		// Hash incoming token
+		// Hash incoming raw token
 		String oldTokenHash = hashToken(rawToken);
 
 		/*
 		 * PESSIMISTIC WRITE LOCK
 		 *
-		 * Prevents two simultaneous requests from successfully rotating the same
-		 * refresh token.
+		 * Important for concurrent refresh requests.
 		 */
 		RefreshToken oldToken = refreshTokenRepository.findByTokenHashForUpdate(oldTokenHash)
 				.orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
@@ -120,25 +139,35 @@ public class RefreshTokenService {
 		LocalDateTime now = LocalDateTime.now();
 
 		// =====================================================
-		// REUSE DETECTION
+		// REVOKED / REUSE DETECTION
 		// =====================================================
 
 		if (oldToken.isRevoked()) {
 
 			/*
-			 * Someone is trying to reuse an already rotated or revoked refresh token.
+			 * If replacedByHash exists, this token was already rotated.
 			 *
-			 * Revoke the complete token family.
+			 * Example:
+			 *
+			 * A -> B
+			 *
+			 * A is revoked.
+			 *
+			 * Someone sends A again.
+			 *
+			 * Possible token theft.
 			 */
-			refreshTokenRepository.revokeFamily(oldToken.getFamilyId(), now);
+			if (oldToken.getReplacedByHash() != null) {
+
+				refreshTokenRepository.revokeFamily(oldToken.getFamilyId(), now, RevocationReason.REUSE_DETECTED);
+
+				throw new RefreshTokenReuseException("Refresh token reuse detected. Please login again.");
+			}
 
 			/*
-			 * VERY IMPORTANT:
-			 *
-			 * noRollbackFor prevents the family revocation from being rolled back when this
-			 * exception is thrown.
+			 * Normal logout/admin revocation.
 			 */
-			throw new RefreshTokenReuseException("Refresh token reuse detected");
+			throw new IllegalArgumentException("Refresh token has been revoked");
 		}
 
 		// =====================================================
@@ -148,15 +177,15 @@ public class RefreshTokenService {
 		if (oldToken.isExpired()) {
 
 			/*
-			 * No need to mark it revoked.
+			 * Token is already invalid.
 			 *
-			 * The expiration itself makes the token invalid.
+			 * Cleanup job can remove it later.
 			 */
 			throw new IllegalArgumentException("Refresh token expired");
 		}
 
 		// =====================================================
-		// GENERATE NEW REFRESH TOKEN
+		// GENERATE NEW TOKEN
 		// =====================================================
 
 		String newRawToken = generateSecureToken();
@@ -170,11 +199,7 @@ public class RefreshTokenService {
 		RefreshToken newToken = RefreshToken.builder().tokenHash(newTokenHash)
 
 				/*
-				 * IMPORTANT:
-				 *
-				 * Same family ID.
-				 *
-				 * This allows reuse detection to revoke the entire refresh-token family.
+				 * Same family.
 				 */
 				.familyId(oldToken.getFamilyId())
 
@@ -193,12 +218,13 @@ public class RefreshTokenService {
 		// =====================================================
 
 		oldToken.setRevoked(true);
+
 		oldToken.setRevokedAt(now);
 
+		oldToken.setRevocationReason(RevocationReason.ROTATED);
+
 		/*
-		 * Store hash of replacement token.
-		 *
-		 * Never store the raw token.
+		 * Store hash of new token.
 		 */
 		oldToken.setReplacedByHash(newTokenHash);
 
@@ -225,6 +251,7 @@ public class RefreshTokenService {
 	public void revokeToken(String rawToken) {
 
 		if (rawToken == null || rawToken.isBlank()) {
+
 			return;
 		}
 
@@ -234,8 +261,13 @@ public class RefreshTokenService {
 
 			if (!token.isRevoked()) {
 
+				LocalDateTime now = LocalDateTime.now();
+
 				token.setRevoked(true);
-				token.setRevokedAt(LocalDateTime.now());
+
+				token.setRevokedAt(now);
+
+				token.setRevocationReason(RevocationReason.LOGOUT);
 
 				refreshTokenRepository.save(token);
 			}
@@ -249,6 +281,10 @@ public class RefreshTokenService {
 	@Transactional
 	public void revokeAllUserTokens(User user) {
 
+		if (user == null) {
+			return;
+		}
+
 		List<RefreshToken> tokens = refreshTokenRepository.findAllByUserId(user.getId());
 
 		LocalDateTime now = LocalDateTime.now();
@@ -258,7 +294,10 @@ public class RefreshTokenService {
 			if (!token.isRevoked()) {
 
 				token.setRevoked(true);
+
 				token.setRevokedAt(now);
+
+				token.setRevocationReason(RevocationReason.ADMIN_REVOKED);
 			}
 		}
 
@@ -266,7 +305,27 @@ public class RefreshTokenService {
 	}
 
 	// =========================================================
-	// GENERATE SECURE RANDOM TOKEN
+	// REVOKE TOKEN FAMILY
+	// =========================================================
+
+	@Transactional
+	public int revokeTokenFamily(String familyId, RevocationReason reason) {
+
+		if (familyId == null || familyId.isBlank()) {
+
+			return 0;
+		}
+
+		if (reason == null) {
+
+			throw new IllegalArgumentException("Revocation reason is required");
+		}
+
+		return refreshTokenRepository.revokeFamily(familyId, LocalDateTime.now(), reason);
+	}
+
+	// =========================================================
+	// GENERATE SECURE TOKEN
 	// =========================================================
 
 	private String generateSecureToken() {
@@ -279,7 +338,7 @@ public class RefreshTokenService {
 	}
 
 	// =========================================================
-	// SHA-256 HASH
+	// SHA-256
 	// =========================================================
 
 	private String hashToken(String rawToken) {
@@ -297,6 +356,7 @@ public class RefreshTokenService {
 				String hex = Integer.toHexString(0xff & b);
 
 				if (hex.length() == 1) {
+
 					hexString.append('0');
 				}
 
@@ -334,7 +394,7 @@ public class RefreshTokenService {
 	}
 
 	// =========================================================
-	// REFRESH TOKEN REUSE EXCEPTION
+	// REUSE EXCEPTION
 	// =========================================================
 
 	public static class RefreshTokenReuseException extends RuntimeException {
