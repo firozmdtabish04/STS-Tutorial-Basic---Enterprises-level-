@@ -4,7 +4,6 @@ import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -21,6 +20,7 @@ import com.tutorial.security.CustomAuthenticationProvider;
 import com.tutorial.security.jwt.JwtAccessDeniedHandler;
 import com.tutorial.security.jwt.JwtAuthenticationEntryPoint;
 import com.tutorial.security.jwt.JwtAuthenticationFilter;
+import com.tutorial.security.ratelimit.RateLimitFilter;
 
 import lombok.RequiredArgsConstructor;
 
@@ -36,130 +36,124 @@ public class SecurityConfig {
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
 	private final JwtAccessDeniedHandler accessDeniedHandler;
+	private final RateLimitFilter rateLimitFilter;
+
+	// =========================================================
+	// SECURITY FILTER CHAIN
+	// =========================================================
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
 		http
 
-				// =====================================================
+				// =================================================
 				// CSRF
-				// =====================================================
-				/*
-				 * Disabled because this is a stateless REST API using Authorization: Bearer
-				 * JWT.
-				 *
-				 * If authentication is later moved to cookies, CSRF protection must be
-				 * reconsidered.
-				 */
+				// =================================================
+
 				.csrf(csrf -> csrf.disable())
 
-				// =====================================================
+				// =================================================
 				// CORS
-				// =====================================================
+				// =================================================
+
 				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-				// =====================================================
+				// =================================================
 				// SESSION
-				// =====================================================
+				// =================================================
+
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-				// =====================================================
+				// =================================================
 				// REQUEST CACHE
-				// =====================================================
+				// =================================================
+
 				.requestCache(requestCache -> requestCache.disable())
 
-				// =====================================================
+				// =================================================
 				// AUTHENTICATION PROVIDER
-				// =====================================================
+				// =================================================
+
 				.authenticationProvider(authenticationProvider)
 
-				// =====================================================
+				// =================================================
 				// EXCEPTION HANDLING
-				// =====================================================
+				// =================================================
+
 				.exceptionHandling(exception -> exception
 
-						// 401
 						.authenticationEntryPoint(authenticationEntryPoint)
 
-						// 403
 						.accessDeniedHandler(accessDeniedHandler))
 
-				// =====================================================
+				// =================================================
 				// SECURITY HEADERS
-				// =====================================================
+				// =================================================
+
 				.headers(headers -> headers
 
-						/*
-						 * Prevent MIME type sniffing.
-						 */
+						// Prevent MIME-type sniffing
 						.contentTypeOptions(contentTypeOptions -> {
 						})
 
-						/*
-						 * Prevent clickjacking.
-						 *
-						 * sameOrigin is useful if Swagger UI is served by this application.
-						 */
+						// Prevent clickjacking
 						.frameOptions(frame -> frame.sameOrigin())
 
-						/*
-						 * Control Referer information.
-						 */
+						// Control Referer information
 						.referrerPolicy(referrer -> referrer
-								.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
+								.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
 
-				// =====================================================
+						// Permissions Policy
+						.permissionsPolicy(
+								permissions -> permissions.policy("camera=(), microphone=(), geolocation=()")))
+				// =================================================
 				// AUTHORIZATION
-				// =====================================================
+				// =================================================
+
 				.authorizeHttpRequests(auth -> auth
 
-						// -------------------------------------------------
-						// Swagger / OpenAPI
-						// -------------------------------------------------
+						// Swagger
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
 
-						// -------------------------------------------------
 						// Authentication
-						// -------------------------------------------------
 						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
 
-						// -------------------------------------------------
-						// Public API
-						// -------------------------------------------------
+						// Public APIs
 						.requestMatchers("/api/public/**").permitAll()
 
-						// -------------------------------------------------
-						// OPTIONS - CORS preflight
-						// -------------------------------------------------
-						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+						// CORS preflight
+						.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
 
-						// -------------------------------------------------
 						// ADMIN
-						// -------------------------------------------------
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-						// -------------------------------------------------
-						// USER
-						// -------------------------------------------------
+						// USER + ADMIN
 						.requestMatchers("/api/user/**").hasAnyRole("USER", "ADMIN")
 
-						// -------------------------------------------------
 						// Everything else
-						// -------------------------------------------------
 						.anyRequest().authenticated())
 
-				// =====================================================
+				// =================================================
 				// JWT FILTER
-				// =====================================================
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				// =================================================
+				// =========================================================
+				// RATE LIMIT FILTER
+				// =========================================================
 
+				.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+
+				// =========================================================
+				// JWT FILTER
+				// =========================================================
+
+				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 
-	// =============================================================
+	// =========================================================
 	// AUTHENTICATION MANAGER
-	// =============================================================
+	// =========================================================
 
 	@Bean
 	public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
@@ -167,37 +161,55 @@ public class SecurityConfig {
 		return configuration.getAuthenticationManager();
 	}
 
-	// =============================================================
-	// CORS
-	// =============================================================
+	// =========================================================
+	// CORS CONFIGURATION
+	// =========================================================
 
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 
 		CorsConfiguration configuration = new CorsConfiguration();
 
-		/*
-		 * Development frontend.
-		 *
-		 * Production: Replace with your real frontend domain.
-		 */
+		// =====================================================
+		// ALLOWED ORIGINS
+		// =====================================================
+
 		configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
+
+		// =====================================================
+		// ALLOWED METHODS
+		// =====================================================
 
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 
+		// =====================================================
+		// ALLOWED HEADERS
+		// =====================================================
+
 		configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin"));
 
-		configuration.setExposedHeaders(List.of("Authorization"));
+		// =====================================================
+		// CREDENTIALS
+		// =====================================================
 
 		/*
-		 * If your application uses Authorization headers, credentials are usually not
-		 * necessary.
+		 * JWT is sent through:
 		 *
-		 * If you later use secure HttpOnly cookies, configure this carefully.
+		 * Authorization: Bearer <token>
+		 *
+		 * Therefore browser credentials are not required.
 		 */
 		configuration.setAllowCredentials(false);
 
+		// =====================================================
+		// PREFLIGHT CACHE
+		// =====================================================
+
 		configuration.setMaxAge(3600L);
+
+		// =====================================================
+		// REGISTER CORS
+		// =====================================================
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 
