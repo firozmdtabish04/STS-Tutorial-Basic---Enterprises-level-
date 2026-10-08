@@ -30,6 +30,10 @@ public class User {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	// =========================================================
+	// BASIC INFORMATION
+	// =========================================================
+
 	@Column(nullable = false)
 	private String email;
 
@@ -103,13 +107,5 @@ public class User {
 		this.locked = false;
 		this.lockedAt = null;
 		this.failedLoginAttempts = 0;
-	}
-
-	// =========================================================
-	// ROLE
-	// =========================================================
-
-	public enum Role {
-		USER, ADMIN
 	}
 }

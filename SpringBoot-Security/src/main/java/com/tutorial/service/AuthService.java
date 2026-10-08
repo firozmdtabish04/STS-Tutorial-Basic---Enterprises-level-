@@ -1,5 +1,7 @@
 package com.tutorial.service;
 
+import java.time.LocalDateTime;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -14,6 +16,7 @@ import com.tutorial.dto.request.RefreshTokenRequest;
 import com.tutorial.dto.request.RegisterRequest;
 import com.tutorial.dto.response.LoginResponse;
 import com.tutorial.dto.response.UserResponse;
+import com.tutorial.entity.Role;
 import com.tutorial.entity.User;
 import com.tutorial.repository.UserRepository;
 import com.tutorial.security.CustomUserDetails;
@@ -41,17 +44,23 @@ public class AuthService {
 	// REGISTER
 	// =========================================================
 
-	@Transactional
 	public UserResponse register(RegisterRequest request) {
 
-		String email = normalizeEmail(request.getEmail());
+		String email = request.getEmail().trim().toLowerCase();
 
+		// Check duplicate email
 		if (userRepository.existsByEmail(email)) {
-			throw new IllegalArgumentException("Email already registered");
+			throw new RuntimeException("Email already registered");
 		}
 
-		User user = User.builder().firstName(request.getFirstName().trim()).lastName(request.getLastName().trim())
-				.email(email).password(passwordEncoder.encode(request.getPassword())).role(User.Role.USER).enabled(true)
+		// ADMIN cannot be registered publicly
+		if (request.getRole() == Role.ADMIN) {
+			throw new RuntimeException("ADMIN registration is not allowed");
+		}
+
+		// Create user
+		User user = User.builder().firstName(request.getFirstName()).lastName(request.getLastName()).email(email)
+				.password(passwordEncoder.encode(request.getPassword())).role(request.getRole()).enabled(true)
 				.locked(false).failedLoginAttempts(0).build();
 
 		User savedUser = userRepository.save(user);
@@ -80,12 +89,10 @@ public class AuthService {
 		// -----------------------------------------------------
 
 		if (!user.isEnabled()) {
-
 			throw new IllegalArgumentException("Account is disabled");
 		}
 
 		if (user.isLocked()) {
-
 			throw new IllegalArgumentException("Account is locked");
 		}
 
@@ -120,6 +127,10 @@ public class AuthService {
 
 				accountLocked = true;
 			}
+
+			// -------------------------------------------------
+			// SAVE FAILED ATTEMPT
+			// -------------------------------------------------
 
 			userRepository.save(user);
 
@@ -182,11 +193,12 @@ public class AuthService {
 				"User logged in successfully");
 
 		// -----------------------------------------------------
-		// 9. RETURN RESPONSE
+		// 9. RETURN LOGIN RESPONSE
 		// -----------------------------------------------------
 
-		return LoginResponse.builder().accessToken(accessToken).refreshToken(result.rawToken()).tokenType("Bearer")
-				.expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
+		return LoginResponse.builder().accessToken(accessToken).expiresIn(jwtService.getExpiration())
+				.refreshToken(result.rawToken()).tokenType("Bearer").user(mapToResponse(user))
+				.timestamp(LocalDateTime.now()).build();
 	}
 
 	// =========================================================
@@ -196,13 +208,17 @@ public class AuthService {
 	@Transactional
 	public LoginResponse refresh(RefreshTokenRequest request) {
 
+		// -----------------------------------------------------
+		// 1. VALIDATE REQUEST
+		// -----------------------------------------------------
+
 		if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
 
 			throw new IllegalArgumentException("Refresh token is required");
 		}
 
 		// -----------------------------------------------------
-		// ROTATE REFRESH TOKEN
+		// 2. ROTATE REFRESH TOKEN
 		// -----------------------------------------------------
 
 		RefreshTokenService.RotationResult result = refreshTokenService.rotate(request.getRefreshToken());
@@ -210,30 +226,31 @@ public class AuthService {
 		User user = result.user();
 
 		// -----------------------------------------------------
-		// SECURITY EVENT: TOKEN REFRESH
+		// 3. SECURITY EVENT: TOKEN REFRESH
 		// -----------------------------------------------------
 
 		securityEventLogger.log(SecurityEvent.TOKEN_REFRESH, user.getId(), user.getEmail(),
 				"Access token and refresh token rotated successfully");
 
 		// -----------------------------------------------------
-		// CREATE NEW USER DETAILS
+		// 4. CREATE USER DETAILS
 		// -----------------------------------------------------
 
 		CustomUserDetails userDetails = new CustomUserDetails(user);
 
 		// -----------------------------------------------------
-		// GENERATE NEW ACCESS TOKEN
+		// 5. GENERATE NEW ACCESS TOKEN
 		// -----------------------------------------------------
 
 		String newAccessToken = jwtService.generateToken(userDetails);
 
 		// -----------------------------------------------------
-		// RETURN RESPONSE
+		// 6. RETURN REFRESH RESPONSE
 		// -----------------------------------------------------
 
-		return LoginResponse.builder().accessToken(newAccessToken).refreshToken(result.refreshToken())
-				.tokenType("Bearer").expiresIn(jwtService.getExpiration()).user(mapToResponse(user)).build();
+		return LoginResponse.builder().accessToken(newAccessToken).expiresIn(jwtService.getExpiration())
+				.refreshToken(result.refreshToken()).tokenType("Bearer").user(mapToResponse(user))
+				.timestamp(LocalDateTime.now()).build();
 	}
 
 	// =========================================================
@@ -243,24 +260,57 @@ public class AuthService {
 	@Transactional
 	public void logout(RefreshTokenRequest request) {
 
+		// -----------------------------------------------------
+		// 1. VALIDATE REQUEST
+		// -----------------------------------------------------
+
 		if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
 
 			return;
 		}
 
-		/*
-		 * Revoke refresh token.
-		 *
-		 * We are not logging the refresh token itself. The refresh token must NEVER
-		 * appear in application logs.
-		 */
+		// -----------------------------------------------------
+		// 2. REVOKE REFRESH TOKEN
+		// -----------------------------------------------------
 
-		refreshTokenService.revokeToken(request.getRefreshToken());
+		User user = refreshTokenService.revokeToken(request.getRefreshToken());
+
+		// -----------------------------------------------------
+		// 3. SECURITY EVENT: LOGOUT
+		// -----------------------------------------------------
+
+		if (user != null) {
+
+			securityEventLogger.log(SecurityEvent.LOGOUT, user.getId(), user.getEmail(),
+					"User logged out successfully");
+		}
 	}
 
 	// =========================================================
 	// LOGOUT ALL DEVICES
 	// =========================================================
+
+	@Transactional
+	public void logoutAll(Long userId) {
+
+		// -----------------------------------------------------
+		// 1. FIND USER
+		// -----------------------------------------------------
+
+		User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+		// -----------------------------------------------------
+		// 2. REVOKE ALL REFRESH TOKENS
+		// -----------------------------------------------------
+
+		refreshTokenService.revokeAllUserTokens(user);
+
+		// -----------------------------------------------------
+		// 3. SECURITY EVENT: LOGOUT ALL
+		// -----------------------------------------------------
+
+		securityEventLogger.log(SecurityEvent.LOGOUT_ALL, user.getId(), user.getEmail(), "All refresh tokens revoked");
+	}
 
 	// =========================================================
 	// NORMALIZE EMAIL

@@ -11,8 +11,6 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -48,103 +46,91 @@ public class SecurityConfig {
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
 		http
-
-				// =================================================
+				// =====================================================
 				// CSRF
-				// =================================================
-
+				// =====================================================
 				.csrf(csrf -> csrf.disable())
 
-				// =================================================
+				// =====================================================
 				// CORS
-				// =================================================
-
+				// =====================================================
 				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-				// =================================================
-				// SESSION
-				// =================================================
-
+				// =====================================================
+				// STATELESS
+				// =====================================================
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-				// =================================================
-				// REQUEST CACHE
-				// =================================================
-
-				.requestCache(requestCache -> requestCache.disable())
-
-				// =================================================
-				// AUTHENTICATION PROVIDER
-				// =================================================
-
-				.authenticationProvider(authenticationProvider)
-
-				// =================================================
+				// =====================================================
 				// EXCEPTION HANDLING
-				// =================================================
-
+				// =====================================================
 				.exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint)
 						.accessDeniedHandler(accessDeniedHandler))
 
-				// =================================================
-				// SECURITY HEADERS
-				// =================================================
-
-				.headers(headers -> headers
-
-						// Prevent MIME sniffing
-						.contentTypeOptions(contentTypeOptions -> {
-						})
-
-						// Prevent clickjacking
-						.frameOptions(frame -> frame.sameOrigin())
-
-						// Referrer Policy
-						.referrerPolicy(referrer -> referrer
-								.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-
-						// Permissions Policy
-						.permissionsPolicy(
-								permissions -> permissions.policy("camera=(), microphone=(), geolocation=()")))
-
-				// =================================================
+				// =====================================================
 				// AUTHORIZATION
-				// =================================================
-
+				// =====================================================
 				.authorizeHttpRequests(auth -> auth
 
-						// Swagger
-						.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-
-						// Local Authentication
+						// -------------------------------------------------
+						// SWAGGER
+						// -------------------------------------------------
+						.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/error").permitAll()
+						// -------------------------------------------------
+						// AUTH
+						// -------------------------------------------------
 						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
 
-						// Public APIs
+						// -------------------------------------------------
+						// PUBLIC
+						// -------------------------------------------------
 						.requestMatchers("/api/public/**").permitAll()
 
-						// CORS preflight
+						// -------------------------------------------------
+						// CORS PREFLIGHT
+						// -------------------------------------------------
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+						// -------------------------------------------------
 						// ADMIN
+						// -------------------------------------------------
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-						// USER + ADMIN
-						.requestMatchers("/api/user/**").hasAnyRole("USER", "ADMIN")
+						// -------------------------------------------------
+						// EMPLOYEE
+						// -------------------------------------------------
+						.requestMatchers("/api/employee/**").hasAnyRole("EMPLOYEE", "ADMIN")
 
-						// Everything else
+						// -------------------------------------------------
+						// USER
+						// -------------------------------------------------
+						.requestMatchers("/api/user/**").hasAnyRole("USER", "ADMIN")
+						// -------------------------------------------------
+						// STAFF
+						// -------------------------------------------------
+
+						.requestMatchers("/api/staff/**").hasAnyRole("STAFF", "ADMIN")
+
+						.requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
+
+						// -------------------------------------------------
+						// PROFILE
+						// -------------------------------------------------
+						.requestMatchers("/api/profile/**").authenticated()
+
+						// -------------------------------------------------
+						// EVERYTHING ELSE
+						// -------------------------------------------------
 						.anyRequest().authenticated())
 
-				// =================================================
-				// RATE LIMIT FILTER
-				// =================================================
+				// =====================================================
+				// CUSTOM FILTERS
+				// =====================================================
+				.addFilterBefore(rateLimitFilter,
+						org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
 
-				.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-
-				// =================================================
-				// JWT FILTER
-				// =================================================
-
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(jwtAuthenticationFilter,
+						org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
 
 		return http.build();
 	}

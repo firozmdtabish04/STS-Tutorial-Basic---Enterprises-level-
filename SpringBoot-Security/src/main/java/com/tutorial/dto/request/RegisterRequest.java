@@ -1,24 +1,36 @@
 package com.tutorial.dto.request;
 
+import com.tutorial.entity.Role;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import lombok.Data;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class RegisterRequest {
 
-	@NotBlank(message = "First name is required")
+	@NotBlank
 	private String firstName;
 
-	@NotBlank(message = "Last name is required")
+	@NotBlank
 	private String lastName;
 
-	@NotBlank(message = "Email is required")
-	@Email(message = "Invalid email")
+	@Email
+	@NotBlank
 	private String email;
 
-	@NotBlank(message = "Password is required")
-	@Size(min = 8, max = 100, message = "Password must contain 8-100 characters")
+	@NotBlank
 	private String password;
+
+	@NotNull
+	private Role role;
 }

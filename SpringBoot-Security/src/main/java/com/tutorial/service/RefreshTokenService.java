@@ -96,6 +96,7 @@ public class RefreshTokenService {
 			/*
 			 * If replacedByHash exists, this token was already rotated.
 			 */
+
 			if (refreshToken.getReplacedByHash() != null) {
 
 				throw new RefreshTokenReuseException("Refresh token reuse detected. Please login again.");
@@ -133,6 +134,7 @@ public class RefreshTokenService {
 		 *
 		 * Important for concurrent refresh requests.
 		 */
+
 		RefreshToken oldToken = refreshTokenRepository.findByTokenHashForUpdate(oldTokenHash)
 				.orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
 
@@ -157,6 +159,7 @@ public class RefreshTokenService {
 			 *
 			 * Possible token theft.
 			 */
+
 			if (oldToken.getReplacedByHash() != null) {
 
 				refreshTokenRepository.revokeFamily(oldToken.getFamilyId(), now, RevocationReason.REUSE_DETECTED);
@@ -167,6 +170,7 @@ public class RefreshTokenService {
 			/*
 			 * Normal logout/admin revocation.
 			 */
+
 			throw new IllegalArgumentException("Refresh token has been revoked");
 		}
 
@@ -176,11 +180,6 @@ public class RefreshTokenService {
 
 		if (oldToken.isExpired()) {
 
-			/*
-			 * Token is already invalid.
-			 *
-			 * Cleanup job can remove it later.
-			 */
 			throw new IllegalArgumentException("Refresh token expired");
 		}
 
@@ -248,30 +247,38 @@ public class RefreshTokenService {
 	// =========================================================
 
 	@Transactional
-	public void revokeToken(String rawToken) {
+	public User revokeToken(String rawToken) {
 
 		if (rawToken == null || rawToken.isBlank()) {
-
-			return;
+			return null;
 		}
 
 		String tokenHash = hashToken(rawToken);
 
-		refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(token -> {
+		RefreshToken token = refreshTokenRepository.findByTokenHash(tokenHash).orElse(null);
 
-			if (!token.isRevoked()) {
+		if (token == null) {
+			return null;
+		}
 
-				LocalDateTime now = LocalDateTime.now();
+		// Get user before revoking
+		User user = token.getUser();
 
-				token.setRevoked(true);
+		// Revoke only if not already revoked
+		if (!token.isRevoked()) {
 
-				token.setRevokedAt(now);
+			LocalDateTime now = LocalDateTime.now();
 
-				token.setRevocationReason(RevocationReason.LOGOUT);
+			token.setRevoked(true);
 
-				refreshTokenRepository.save(token);
-			}
-		});
+			token.setRevokedAt(now);
+
+			token.setRevocationReason(RevocationReason.LOGOUT);
+
+			refreshTokenRepository.save(token);
+		}
+
+		return user;
 	}
 
 	// =========================================================
@@ -312,7 +319,6 @@ public class RefreshTokenService {
 	public int revokeTokenFamily(String familyId, RevocationReason reason) {
 
 		if (familyId == null || familyId.isBlank()) {
-
 			return 0;
 		}
 
@@ -356,7 +362,6 @@ public class RefreshTokenService {
 				String hex = Integer.toHexString(0xff & b);
 
 				if (hex.length() == 1) {
-
 					hexString.append('0');
 				}
 
