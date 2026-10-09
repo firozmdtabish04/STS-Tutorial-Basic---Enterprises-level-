@@ -2,6 +2,8 @@ package com.tutorial.profile.dto;
 
 import java.time.LocalDate;
 
+import com.tutorial.profile.enums.Gender;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -29,7 +31,7 @@ public class ProfileResponse {
 
 	private LocalDate dateOfBirth;
 
-	private String gender;
+	private Gender gender;
 
 	private String address;
 
@@ -40,4 +42,6 @@ public class ProfileResponse {
 	private String country;
 
 	private String profileImage;
+
+	private Long version;
 }

@@ -4,9 +4,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.tutorial.entity.User;
+import com.tutorial.profile.enums.Gender;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -17,6 +20,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -51,10 +55,12 @@ public class Profile {
 	@Column(length = 20)
 	private String phone;
 
+	@Column(name = "date_of_birth")
 	private LocalDate dateOfBirth;
 
-	@Column(length = 20)
-	private String gender;
+	@Enumerated(EnumType.STRING)
+	@Column(length = 30)
+	private Gender gender;
 
 	// =========================================================
 	// ADDRESS
@@ -76,17 +82,41 @@ public class Profile {
 	// PROFILE IMAGE
 	// =========================================================
 
+	@Column(name = "profile_image", length = 500)
 	private String profileImage;
 
 	// =========================================================
 	// AUDIT
 	// =========================================================
 
-	@Column(nullable = false)
+	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
 
-	@Column(nullable = false)
+	@Column(name = "updated_at", nullable = false)
 	private LocalDateTime updatedAt;
+
+	// =========================================================
+	// OPTIMISTIC LOCKING
+	// =========================================================
+
+	@Version
+	@Column(nullable = false)
+	private Long version;
+
+	// =========================================================
+	// SOFT DELETE
+	// =========================================================
+
+	@Column(name = "deleted", nullable = false)
+	@Builder.Default
+	private boolean deleted = false;
+
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
+
+	// =========================================================
+	// CREATE
+	// =========================================================
 
 	@PrePersist
 	protected void onCreate() {
@@ -97,9 +127,33 @@ public class Profile {
 		updatedAt = now;
 	}
 
+	// =========================================================
+	// UPDATE
+	// =========================================================
+
 	@PreUpdate
 	protected void onUpdate() {
 
 		updatedAt = LocalDateTime.now();
+	}
+
+	// =========================================================
+	// SOFT DELETE
+	// =========================================================
+
+	public void softDelete() {
+
+		this.deleted = true;
+		this.deletedAt = LocalDateTime.now();
+	}
+
+	// =========================================================
+	// RESTORE
+	// =========================================================
+
+	public void restore() {
+
+		this.deleted = false;
+		this.deletedAt = null;
 	}
 }

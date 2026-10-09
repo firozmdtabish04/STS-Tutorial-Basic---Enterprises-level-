@@ -1,1 +1,5 @@
 docker start redis
+docker pull redis:7
+docker run -d --name redis -p 6379:6379 redis:7
+docker ps
+docker exec -it redis redis-cli ping

@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,10 +28,10 @@ public class ProfileController {
 	private final ProfileService profileService;
 
 	// =========================================================
-	// CREATE PROFILE
+	// CREATE
 	// =========================================================
 
-	@PostMapping("/me")
+	@PostMapping("/create")
 	public ResponseEntity<ProfileResponse> createProfile(Authentication authentication,
 			@Valid @RequestBody ProfileRequest request) {
 
@@ -42,10 +43,10 @@ public class ProfileController {
 	}
 
 	// =========================================================
-	// READ PROFILE
+	// READ
 	// =========================================================
 
-	@GetMapping("/me")
+	@GetMapping("/retrieve")
 	public ResponseEntity<ProfileResponse> getMyProfile(Authentication authentication) {
 
 		Long userId = getUserId(authentication);
@@ -56,10 +57,10 @@ public class ProfileController {
 	}
 
 	// =========================================================
-	// UPDATE PROFILE
+	// UPDATE
 	// =========================================================
 
-	@PutMapping("/me")
+	@PutMapping("/update")
 	public ResponseEntity<ProfileResponse> updateMyProfile(Authentication authentication,
 			@Valid @RequestBody ProfileRequest request) {
 
@@ -71,10 +72,10 @@ public class ProfileController {
 	}
 
 	// =========================================================
-	// DELETE PROFILE
+	// DELETE
 	// =========================================================
 
-	@DeleteMapping("/me")
+	@DeleteMapping("/delete")
 	public ResponseEntity<Void> deleteMyProfile(Authentication authentication) {
 
 		Long userId = getUserId(authentication);
@@ -85,7 +86,7 @@ public class ProfileController {
 	}
 
 	// =========================================================
-	// GET AUTHENTICATED USER ID
+	// GET USER ID
 	// =========================================================
 
 	private Long getUserId(Authentication authentication) {
@@ -94,4 +95,21 @@ public class ProfileController {
 
 		return userDetails.getUser().getId();
 	}
+
+	@GetMapping("/{id}")
+	public ResponseEntity<ProfileResponse> getProfileById(@PathVariable Long id) {
+
+		ProfileResponse response = profileService.getProfileById(id);
+		return ResponseEntity.ok(response);
+	}
+
+	@PutMapping("/{id}")
+	public ResponseEntity<ProfileResponse> updateProfileById(@PathVariable Long id,
+			@Valid @RequestBody ProfileRequest request) {
+
+		ProfileResponse response = profileService.updateProfileById(id, request);
+
+		return ResponseEntity.ok(response);
+	}
+
 }

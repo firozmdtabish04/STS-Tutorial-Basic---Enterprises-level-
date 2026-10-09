@@ -14,6 +14,11 @@ public interface ProfileService {
 	// UPDATE
 	ProfileResponse updateProfile(Long userId, ProfileRequest request);
 
+	ProfileResponse getProfileById(Long id);
+
+	ProfileResponse updateProfileById(Long id, ProfileRequest request);
+
 	// DELETE
 	void deleteProfile(Long userId);
+
 }
